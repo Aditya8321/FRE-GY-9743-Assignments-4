@@ -102,26 +102,54 @@ class Interpolator1DPCP(Interpolator1D):
 
     def __init__(self, axis1: np.ndarray, values: np.ndarray,
                  extrapolation_method: ExtrapMethod) -> None:
+        axis1 = np.array(axis1, dtype=float, copy=True)
+        values = np.array(values, dtype=float, copy=True)
+        if axis1.ndim != 1 or values.ndim != 1:
+            raise ValueError('Knots and ordinates must be one-dimensional.')
+        if len(axis1) == 0 or len(axis1) != len(values):
+            raise ValueError('Use nonempty knots and equally many ordinates.')
+        if not np.all(np.isfinite(axis1)) or not np.all(np.isfinite(values)):
+            raise ValueError('Knots and ordinates must be finite.')
+        if not np.all(np.diff(axis1) > 0):
+            raise ValueError('Knots must be strictly increasing.')
+        if extrapolation_method != ExtrapMethod.FLAT:
+            raise ValueError('This interpolator supports only flat extrapolation.')
         super().__init__(axis1, values,
                          InterpMethod.PIECEWISE_CONSTANT_LEFT_CONTINUOUS,
                          extrapolation_method)
-        assert self.extrap_method_ == ExtrapMethod.FLAT
 
     def interpolate(self, x: float) -> float:
-        #TODO
-        pass
+        if not np.isfinite(x):
+            raise ValueError('The interpolation point must be finite.')
+        # The first knot >= x selects the value on (x[i-1], x[i]].
+        index = min(np.searchsorted(self.axis1_, x, side='left'), self.length_ - 1)
+        return float(self.values_[index])
 
     def integrate(self, start_x: float, end_x: float) -> float:
-        #TODO
-        pass
+        weights = self.gradient_of_integrated_value_wrt_ordinate(start_x, end_x)
+        return float(np.dot(weights, self.values_))
 
     def gradient_wrt_ordinate(self, x: float) -> np.ndarray:
-        #TODO
-        pass
+        if not np.isfinite(x):
+            raise ValueError('The interpolation point must be finite.')
+        index = min(np.searchsorted(self.axis1_, x, side='left'), self.length_ - 1)
+        gradient = np.zeros(self.length_, dtype=float)
+        gradient[index] = 1.0
+        return gradient
 
     def gradient_of_integrated_value_wrt_ordinate(self, start_x: float, end_x: float) -> np.ndarray:
-        #TODO
-        pass
+        if not np.isfinite(start_x) or not np.isfinite(end_x):
+            raise ValueError('Integration endpoints must be finite.')
+        lower, upper = min(start_x, end_x), max(start_x, end_x)
+        sign = 1.0 if end_x >= start_x else -1.0
+        # Each entry is the length of the interval using that ordinate.
+        # The outer intervals include the flat extrapolation wings.
+        left_edges = np.concatenate(([-np.inf], self.axis1_[:-1]))
+        right_edges = np.concatenate((self.axis1_[:-1], [np.inf]))
+        lengths = np.maximum(
+            0.0, np.minimum(upper, right_edges) - np.maximum(lower, left_edges)
+        )
+        return sign * lengths
 
 
 
